@@ -134,6 +134,72 @@ func TestExhaustiveness(t *testing.T) {
 	})
 }
 
+func TestEdgeCases(t *testing.T) {
+	Convey("Given a matcher", t, func() {
+		m := sumx.NewMatcher[string]()
+		sumx.On(m, func(Circle) string { return "circle" })
+
+		Convey("When On is given a nil handler", func() {
+			Convey("Then it panics at registration", func() {
+				So(func() { sumx.On(m, (func(Rect) string)(nil)) }, ShouldPanic)
+			})
+		})
+
+		Convey("When a nil value is evaluated with no default", func() {
+			Convey("Then Eval panics rather than misdispatching", func() {
+				So(func() { m.Eval(nil) }, ShouldPanic)
+			})
+		})
+
+		Convey("When a nil value is evaluated safely", func() {
+			v, ok := m.EvalSafe(nil)
+
+			Convey("Then it reports no match", func() {
+				So(ok, ShouldBeFalse)
+				So(v, ShouldEqual, "")
+			})
+		})
+
+		Convey("When a nil value has a default", func() {
+			m.Default(func(any) string { return "fallback" })
+
+			Convey("Then the default handles it", func() {
+				So(m.Eval(nil), ShouldEqual, "fallback")
+			})
+		})
+	})
+}
+
+func TestConcurrentEval(t *testing.T) {
+	Convey("Given a fully built matcher", t, func() {
+		m := sumx.NewMatcher[string]()
+		sumx.On(m, func(Circle) string { return "circle" })
+		sumx.On(m, func(Rect) string { return "rect" })
+
+		Convey("When Eval is called from many goroutines (race detector on)", func() {
+			const n = 50
+			done := make(chan string, n)
+			for i := 0; i < n; i++ {
+				go func(i int) {
+					if i%2 == 0 {
+						done <- m.Eval(Circle{})
+					} else {
+						done <- m.Eval(Rect{})
+					}
+				}(i)
+			}
+
+			Convey("Then concurrent reads are safe and correct", func() {
+				counts := map[string]int{}
+				for i := 0; i < n; i++ {
+					counts[<-done]++
+				}
+				So(counts["circle"]+counts["rect"], ShouldEqual, n)
+			})
+		})
+	})
+}
+
 // Node is a sealed sum type whose variants are pointers, to exercise
 // pointer-variant handling.
 type Node interface{ sealedNode() }

@@ -62,8 +62,12 @@ func NewMatcher[R any]() *Matcher[R] {
 
 // On registers h as the handler for variant C. It is a free function rather
 // than a method so it can introduce its own type parameter C; a method
-// cannot. Registering C twice replaces the earlier handler.
+// cannot. Registering C twice replaces the earlier handler. On panics if h is
+// nil, failing fast at registration rather than at dispatch.
 func On[C, R any](m *Matcher[R], h func(C) R) *Matcher[R] {
+	if h == nil {
+		panic("sumx: On called with a nil handler")
+	}
 	m.handlers[typeOf[C]()] = func(v any) R { return h(v.(C)) }
 	return m
 }
